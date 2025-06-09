@@ -6,7 +6,7 @@ import trimesh
 
 app = FastAPI()
 
-# Correcte CORS-instellingen voor jouw domeinen
+# Alleen expliciete HTTPS origins toegestaan (zet jouw domein hier)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
