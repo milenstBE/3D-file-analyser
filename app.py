@@ -1,14 +1,12 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from stl import mesh
 import tempfile
-import numpy as np
-import os
+import trimesh
 
 app = FastAPI()
 
-# CORS-configuratie
+# CORS voor frontend toegang
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,45 +14,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def calculate_volume(m: mesh.Mesh) -> float:
-    volume = 0.0
-    for i in range(len(m.vectors)):
-        p1, p2, p3 = m.vectors[i]
-        v = np.dot(p1, np.cross(p2, p3)) / 6
-        volume += v
-    return abs(volume)
-
 @app.post("/analyze")
 async def analyze_file(file: UploadFile = File(...)):
     try:
-        filename = file.filename.lower()
-        if not filename.endswith(".stl"):
-            raise ValueError("Enkel STL-bestanden worden ondersteund.")
-
-        suffix = "." + filename.split(".")[-1]
+        # Bestand opslaan in tijdelijke map
+        suffix = "." + file.filename.split(".")[-1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            content = await file.read()
-            tmp.write(content)
+            tmp.write(await file.read())
             tmp_path = tmp.name
 
-        stl_mesh = mesh.Mesh.from_file(tmp_path)
+        # Laad het 3D model met trimesh
+        mesh = trimesh.load(tmp_path, force='mesh')
 
-        if stl_mesh.vectors.size == 0:
-            raise ValueError("Ongeldig of leeg STL-bestand.")
-
-        volume_mm3 = calculate_volume(stl_mesh)
-        size = stl_mesh.max_ - stl_mesh.min_
-
-        os.remove(tmp_path)
+        # Bereken volume en bounding box
+        volume = mesh.volume  # in mm³
+        bounds = mesh.bounds  # min en max [[x1, y1, z1], [x2, y2, z2]]
+        size = bounds[1] - bounds[0]  # dimensies in mm
 
         return {
-            "volume_cm3": float(volume_mm3 / 1000),
-            "dimensions_mm": [float(dim) for dim in size]
+            "volume_cm3": float(volume / 1000),
+            "dimensions_mm": [float(d) for d in size]
         }
-
     except Exception as e:
-        print(f"Fout bij verwerken STL-bestand: {e}")
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Kon bestand niet verwerken. Upload een geldig binair STL-bestand."}
-        )
+        return JSONResponse(status_code=400, content={"error": "Kon bestand niet verwerken. Upload een geldig STL-bestand."})
