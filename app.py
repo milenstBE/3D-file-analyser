@@ -24,10 +24,11 @@ async def analyze(file: UploadFile):
     else:
         return {"error": "Ongeldig bestandstype"}
 
-    return {
-        "volume_cm3": round(volume, 2),
-        "dimensions_mm": [round(s, 1) for s in size]
-    }
+return {
+    "volume_cm3": float(volume),
+    "dimensions_mm": [float(d) for d in dimensions]
+}
+
 import os
 
 if __name__ == "__main__":
