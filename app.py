@@ -7,6 +7,7 @@ import numpy as np
 
 app = FastAPI()
 
+# CORS voor frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,7 +34,4 @@ async def analyze_file(file: UploadFile = File(...)):
             "dimensions_mm": [float(dim) for dim in size]
         }
     except Exception:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Kon bestand niet verwerken. Upload een geldig STL- of STEP-bestand."}
-        )
+        return JSONResponse(status_code=400, content={"error": "Kon bestand niet verwerken. Upload een geldig STL-bestand."})
