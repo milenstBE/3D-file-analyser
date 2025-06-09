@@ -1,53 +1,37 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from stl import mesh
-import numpy as np
 import tempfile
-import os
+import numpy as np
 
 app = FastAPI()
 
-# CORS-ondersteuning zodat je HTML tool op makernaut.be verbinding kan maken
+# CORS: frontend mag toegang hebben
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # in productie strakker instellen
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class AnalysisResult(BaseModel):
-    volume_cm3: float
-    dimensions_mm: list[float]
-
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...)):
-    if not file.filename.lower().endswith(".stl"):
-        return JSONResponse(content={"error": "Enkel STL ondersteund in deze testfase."}, status_code=400)
-
+async def analyze_file(file: UploadFile = File(...)):
     try:
-        contents = await file.read()
+        suffix = "." + file.filename.split(".")[-1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".stl") as temp_file:
-            temp_file.write(contents)
-            temp_path = temp_file.name
+        stl_mesh = mesh.Mesh.from_file(tmp_path)
+        volume = np.sum(stl_mesh.get_volumes())
+        min_bounds = stl_mesh.min_
+        max_bounds = stl_mesh.max_
+        size = (max_bounds - min_bounds)
 
-        part_mesh = mesh.Mesh.from_file(temp_path)
-
-        # Volumeberekening
-        volume_mm3, _, _ = part_mesh.get_mass_properties()
-        volume_cm3 = float(volume_mm3) / 1000.0
-
-        # Dimensies berekenen
-        mins = np.min(part_mesh.vectors, axis=(0, 1))
-        maxs = np.max(part_mesh.vectors, axis=(0, 1))
-        size_mm = maxs - mins
-
-        os.remove(temp_path)
-
-        return AnalysisResult(volume_cm3=volume_cm3, dimensions_mm=[float(x) for x in size_mm])
-
+        return {
+            "volume_cm3": float(volume / 1000),
+            "dimensions_mm": [float(dim) for dim in size]
+        }
     except Exception as e:
-        return JSONResponse(content={"error": f"Verwerking mislukt: {str(e)}"}, status_code=500)
+        return JSONResponse(status_code=400, content={"error": "Kon bestand niet verwerken. Upload een geldig STL- of STEP-bestand."})
