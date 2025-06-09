@@ -24,17 +24,19 @@ async def analyze_file(file: UploadFile = File(...)):
         # Load STL file into numpy-stl mesh object
         part_mesh = mesh.Mesh.from_buffer(io.BytesIO(contents))
 
-        # Compute volume and bounding box
+        # Compute volume
         volume = float(np.sum(part_mesh.areas * part_mesh.normals[:, 2]) / 3.0)
         volume_cm3 = abs(volume) / 1000  # mm³ → cm³
 
+        # Compute bounding box
         min_corner = np.min(part_mesh.vectors, axis=(0, 1))
         max_corner = np.max(part_mesh.vectors, axis=(0, 1))
-        dimensions_mm = [float(x) for x in (max_corner - min_corner)]
+        dimensions_mm = (max_corner - min_corner).tolist()  # Convert numpy array to list
 
+        # Convert all to standard Python types
         return {
             "volume_cm3": float(volume_cm3),
-            "dimensions_mm": dimensions_mm
+            "dimensions_mm": [float(d) for d in dimensions_mm]
         }
 
     except Exception as e:
