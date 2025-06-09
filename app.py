@@ -6,15 +6,9 @@ import trimesh
 
 app = FastAPI()
 
-# Alleen expliciete HTTPS origins toegestaan (zet jouw domein hier)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://makernaut.be",
-        "https://www.makernaut.be",
-        "https://3d-file-analyser.onrender.com"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],  # Je kan dit beperken tot "https://makernaut.be" als je live gaat
     allow_methods=["*"],
     allow_headers=["*"],
 )
