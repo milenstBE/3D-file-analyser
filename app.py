@@ -1,37 +1,46 @@
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from stl import mesh
 import numpy as np
-import tempfile
+import io
 import os
+import uvicorn
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Enable CORS for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # eventueel beperken tot jouw domein
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/analyze")
-async def analyze(file: UploadFile):
-    suffix = os.path.splitext(file.filename)[-1].lower()
+async def analyze_file(file: UploadFile = File(...)):
     contents = await file.read()
-    
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp:
-        temp.write(contents)
-        temp_path = temp.name
+    try:
+        # Load STL file into numpy-stl mesh object
+        part_mesh = mesh.Mesh.from_buffer(io.BytesIO(contents))
 
-    if suffix == ".stl":
-        m = mesh.Mesh.from_file(temp_path)
-        volume = m.get_mass_properties()[0]
-        size = m.max_ - m.min_
-    else:
-        return {"error": "Ongeldig bestandstype"}
+        # Compute volume and bounding box
+        volume = float(np.sum(part_mesh.areas * part_mesh.normals[:, 2]) / 3.0)
+        volume_cm3 = abs(volume) / 1000  # mm³ → cm³
 
-return {
-    "volume_cm3": float(volume),
-    "dimensions_mm": [float(d) for d in dimensions]
-}
+        min_corner = np.min(part_mesh.vectors, axis=(0, 1))
+        max_corner = np.max(part_mesh.vectors, axis=(0, 1))
+        dimensions_mm = [float(x) for x in (max_corner - min_corner)]
 
-import os
+        return {
+            "volume_cm3": float(volume_cm3),
+            "dimensions_mm": dimensions_mm
+        }
 
+    except Exception as e:
+        return { "error": "Kan bestand niet verwerken. Upload een geldig STL- of STEP-bestand." }
+
+# Bind dynamic port for Render
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 10000))  # standaard fallback naar 10000
+    port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
