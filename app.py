@@ -1,36 +1,53 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import numpy as np
+from pydantic import BaseModel
 from stl import mesh
-import io
+import numpy as np
+import tempfile
+import os
 
 app = FastAPI()
 
+# CORS-ondersteuning zodat je HTML tool op makernaut.be verbinding kan maken
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # in productie strakker instellen
+    allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
+class AnalysisResult(BaseModel):
+    volume_cm3: float
+    dimensions_mm: list[float]
+
 @app.post("/analyze")
-async def analyze_file(file: UploadFile = File(...)):
-    contents = await file.read()
+async def analyze(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith(".stl"):
+        return JSONResponse(content={"error": "Enkel STL ondersteund in deze testfase."}, status_code=400)
+
     try:
-        # STL verwerken met numpy-stl
-        part_mesh = mesh.Mesh.from_buffer(io.BytesIO(contents))
+        contents = await file.read()
 
-        volume = np.sum(part_mesh.areas * part_mesh.normals[:, 2]) / 3.0
-        volume_cm3 = abs(float(volume)) / 1000  # mm³ → cm³
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".stl") as temp_file:
+            temp_file.write(contents)
+            temp_path = temp_file.name
 
-        min_corner = np.min(part_mesh.vectors, axis=(0, 1))
-        max_corner = np.max(part_mesh.vectors, axis=(0, 1))
-        dimensions_mm = (max_corner - min_corner).astype(float).tolist()
+        part_mesh = mesh.Mesh.from_file(temp_path)
 
-        return {
-            "volume_cm3": round(volume_cm3, 2),
-            "dimensions_mm": [round(d, 2) for d in dimensions_mm]
-        }
+        # Volumeberekening
+        volume_mm3, _, _ = part_mesh.get_mass_properties()
+        volume_cm3 = float(volume_mm3) / 1000.0
+
+        # Dimensies berekenen
+        mins = np.min(part_mesh.vectors, axis=(0, 1))
+        maxs = np.max(part_mesh.vectors, axis=(0, 1))
+        size_mm = maxs - mins
+
+        os.remove(temp_path)
+
+        return AnalysisResult(volume_cm3=volume_cm3, dimensions_mm=[float(x) for x in size_mm])
 
     except Exception as e:
-        return {"error": "Kan bestand niet verwerken. Upload een geldig STL- of STEP-bestand."}
+        return JSONResponse(content={"error": f"Verwerking mislukt: {str(e)}"}, status_code=500)
