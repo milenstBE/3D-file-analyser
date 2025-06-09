@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import tempfile
 import trimesh
+import traceback
 
 app = FastAPI()
 
@@ -18,13 +19,19 @@ app.add_middleware(
 async def analyze_file(file: UploadFile = File(...)):
     try:
         # Bestand opslaan in tijdelijke map
-        suffix = "." + file.filename.split(".")[-1]
+        suffix = "." + file.filename.split(".")[-1].lower()
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
 
         # Laad het 3D model met trimesh
-        mesh = trimesh.load(tmp_path, force='mesh')
+        if suffix in [".stl", ".step", ".stp"]:
+            mesh = trimesh.load(tmp_path, force='mesh')
+        else:
+            return JSONResponse(status_code=400, content={"error": "Alleen STL of STEP bestanden worden ondersteund."})
+
+        if mesh.is_empty or not hasattr(mesh, 'volume'):
+            return JSONResponse(status_code=400, content={"error": "Kon geen geldig 3D model detecteren in bestand."})
 
         # Bereken volume en bounding box
         volume = mesh.volume  # in mm³
@@ -36,4 +43,5 @@ async def analyze_file(file: UploadFile = File(...)):
             "dimensions_mm": [float(d) for d in size]
         }
     except Exception as e:
-        return JSONResponse(status_code=400, content={"error": "Kon bestand niet verwerken. Upload een geldig STL-bestand."})
+        traceback.print_exc()
+        return JSONResponse(status_code=400, content={"error": "Kon bestand niet verwerken. Upload een geldig STL- of STEP-bestand."})
