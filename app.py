@@ -6,10 +6,14 @@ import trimesh
 
 app = FastAPI()
 
-# Correcte CORS-middleware zodat je frontend (bijv. makernaut.be) verbinding mag maken
+# Correcte CORS-instellingen voor jouw domeinen
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # eventueel specifieker: ["https://www.makernaut.be"]
+    allow_origins=[
+        "https://makernaut.be",
+        "https://www.makernaut.be",
+        "https://3d-file-analyser.onrender.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,7 +28,6 @@ async def analyze_file(file: UploadFile = File(...)):
             tmp.write(contents)
             tmp_path = tmp.name
 
-        # Laad bestand met trimesh (ondersteunt STL, STEP, etc.)
         mesh = trimesh.load(tmp_path, force='mesh')
 
         if mesh.is_empty:
