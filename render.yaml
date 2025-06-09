@@ -3,5 +3,8 @@ services:
     name: 3D-file-analyser
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    startCommand: "uvicorn app:app --host 0.0.0.0 --port 10000"
     plan: free
+    envVars:
+      - key: PORT
+        value: 10000
