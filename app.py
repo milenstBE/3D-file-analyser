@@ -8,7 +8,7 @@ import os
 
 app = FastAPI()
 
-# CORS-configuratie voor frontend toegang
+# CORS-configuratie
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,12 +16,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def calculate_volume(m: mesh.Mesh) -> float:
+    volume = 0.0
+    for i in range(len(m.vectors)):
+        p1, p2, p3 = m.vectors[i]
+        v = np.dot(p1, np.cross(p2, p3)) / 6
+        volume += v
+    return abs(volume)
+
 @app.post("/analyze")
 async def analyze_file(file: UploadFile = File(...)):
     try:
         filename = file.filename.lower()
         if not filename.endswith(".stl"):
-            raise ValueError("Enkel STL-bestanden worden momenteel ondersteund.")
+            raise ValueError("Enkel STL-bestanden worden ondersteund.")
 
         suffix = "." + filename.split(".")[-1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -29,22 +37,18 @@ async def analyze_file(file: UploadFile = File(...)):
             tmp.write(content)
             tmp_path = tmp.name
 
-        print(f"Bestand opgeslagen op tijdelijke locatie: {tmp_path}")
         stl_mesh = mesh.Mesh.from_file(tmp_path)
 
-        # Check of de mesh geldig is
         if stl_mesh.vectors.size == 0:
-            raise ValueError("Geen geldige mesh gevonden in STL-bestand.")
+            raise ValueError("Ongeldig of leeg STL-bestand.")
 
-        volume = np.sum(stl_mesh.get_volumes())  # in mm³
-        min_bounds = stl_mesh.min_
-        max_bounds = stl_mesh.max_
-        size = max_bounds - min_bounds
+        volume_mm3 = calculate_volume(stl_mesh)
+        size = stl_mesh.max_ - stl_mesh.min_
 
         os.remove(tmp_path)
 
         return {
-            "volume_cm3": float(volume / 1000),  # omzetten naar cm³
+            "volume_cm3": float(volume_mm3 / 1000),
             "dimensions_mm": [float(dim) for dim in size]
         }
 
