@@ -8,6 +8,7 @@ import os
 
 app = FastAPI()
 
+# CORS-configuratie voor frontend toegang
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,35 +19,38 @@ app.add_middleware(
 @app.post("/analyze")
 async def analyze_file(file: UploadFile = File(...)):
     try:
-        ext = file.filename.split('.')[-1].lower()
-        if ext != "stl":
-            raise ValueError("Bestand is geen STL")
+        filename = file.filename.lower()
+        if not filename.endswith(".stl"):
+            raise ValueError("Enkel STL-bestanden worden momenteel ondersteund.")
 
-        suffix = "." + ext
+        suffix = "." + filename.split(".")[-1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
 
-        # Validatie: probeer STL te openen
-        try:
-            stl_mesh = mesh.Mesh.from_file(tmp_path)
-        except Exception:
-            raise ValueError("Geen geldig binair STL-bestand")
+        print(f"Bestand opgeslagen op tijdelijke locatie: {tmp_path}")
+        stl_mesh = mesh.Mesh.from_file(tmp_path)
 
-        volume = np.sum(stl_mesh.get_volumes())
-        size = stl_mesh.max_ - stl_mesh.min_
+        # Check of de mesh geldig is
+        if stl_mesh.vectors.size == 0:
+            raise ValueError("Geen geldige mesh gevonden in STL-bestand.")
+
+        volume = np.sum(stl_mesh.get_volumes())  # in mm³
+        min_bounds = stl_mesh.min_
+        max_bounds = stl_mesh.max_
+        size = max_bounds - min_bounds
+
+        os.remove(tmp_path)
 
         return {
-            "volume_cm3": float(volume / 1000),
-            "dimensions_mm": [float(x) for x in size]
+            "volume_cm3": float(volume / 1000),  # omzetten naar cm³
+            "dimensions_mm": [float(dim) for dim in size]
         }
 
-    except Exception:
+    except Exception as e:
+        print(f"Fout bij verwerken STL-bestand: {e}")
         return JSONResponse(
             status_code=400,
             content={"error": "Kon bestand niet verwerken. Upload een geldig binair STL-bestand."}
         )
-    finally:
-        if 'tmp_path' in locals() and os.path.exists(tmp_path):
-            os.remove(tmp_path)
